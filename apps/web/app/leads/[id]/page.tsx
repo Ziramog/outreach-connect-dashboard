@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import type { Lead } from '@/lib/types'
+import type { Lead, OutreachMessage } from '@/lib/types'
 import { StatusBadge } from '@/components/StatusBadge'
 
 export default function LeadDetailPage() {
@@ -10,16 +10,18 @@ export default function LeadDetailPage() {
   const [lead, setLead] = useState<Lead | null>(null)
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(true)
+  const [messages, setMessages] = useState<OutreachMessage[]>([])
 
   useEffect(() => {
     if (!id) return
-    fetch(`/api/proxy/leads/${id}`)
-      .then(r => r.json())
-      .then(data => {
-        setLead(data)
-        setNotes(data.notes || '')
-      })
-      .finally(() => setLoading(false))
+    Promise.all([
+      fetch(`/api/proxy/leads/${id}`).then(r => r.json()),
+      fetch(`/api/proxy/leads/${id}/messages`).then(r => r.json()).catch(() => ({ messages: [] }))
+    ]).then(([leadData, msgData]) => {
+      setLead(leadData)
+      setNotes(leadData.notes || '')
+      setMessages(msgData.messages || [])
+    }).finally(() => setLoading(false))
   }, [id])
 
   const handleAction = async (action: string) => {
@@ -30,6 +32,9 @@ export default function LeadDetailPage() {
         body: JSON.stringify({ action })
       }).then(r => r.json())
       if (data.lead) setLead(data.lead)
+      // Refresh messages after action
+      const msgData = await fetch(`/api/proxy/leads/${id}/messages`).then(r => r.json()).catch(() => ({ messages: [] }))
+      setMessages(msgData.messages || [])
     } catch {}
   }
 
@@ -66,10 +71,25 @@ export default function LeadDetailPage() {
             <div className="mt-1"><StatusBadge status={lead.outreach_status} /></div>
           </div>
           <div>
+            <span className="text-xs text-zinc-500 uppercase">Vertical</span>
+            <p className="font-medium">{lead.vertical}</p>
+          </div>
+          <div>
             <span className="text-xs text-zinc-500 uppercase">Creado</span>
             <p className="font-medium">{new Date(lead.scraped_at).toLocaleDateString('es-AR')}</p>
           </div>
+          <div>
+            <span className="text-xs text-zinc-500 uppercase">Enviado</span>
+            <p className="font-medium">{lead.outreach_sent_at ? new Date(lead.outreach_sent_at).toLocaleDateString('es-AR') : 'Nunca'}</p>
+          </div>
         </div>
+
+        {(lead.email || lead.website) && (
+          <div className="flex gap-4 mb-4">
+            {lead.email && <a href={`mailto:${lead.email}`} className="text-sm text-green-400 hover:underline">{lead.email}</a>}
+            {lead.website && <a href={lead.website} target="_blank" rel="noopener" className="text-sm text-green-400 hover:underline">{lead.website}</a>}
+          </div>
+        )}
 
         <div className="mb-4">
           <span className="text-xs text-zinc-500 uppercase">Notas</span>
@@ -93,6 +113,30 @@ export default function LeadDetailPage() {
           ))}
         </div>
       </div>
+
+      {messages.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-6">
+          <h3 className="font-medium mb-4">Mensajes</h3>
+          <div className="space-y-3">
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex flex-col ${msg.direction === 'inbound' ? 'items-start' : 'items-end'}`}>
+                <div className={`max-w-[80%] rounded-xl px-4 py-2 text-sm ${
+                  msg.direction === 'inbound'
+                    ? 'bg-zinc-800 text-zinc-200 rounded-bl-none'
+                    : msg.direction === 'outbound_auto'
+                    ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-br-none'
+                    : 'bg-green-500/20 text-green-400 border border-green-500/30 rounded-br-none'
+                }`}>
+                  {msg.content}
+                </div>
+                <span className="text-xs text-zinc-600 mt-1">
+                  {msg.direction === 'inbound' ? 'Recibido' : msg.direction === 'outbound_auto' ? 'Auto' : 'Enviado'} · {new Date(msg.sent_at).toLocaleString('es-AR')}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
         <h3 className="font-medium mb-4">Historial de acciones</h3>

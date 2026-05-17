@@ -216,6 +216,7 @@ class DbService {
   async getStats(): Promise<Stats> {
     const client = this.getClient()
     const today = new Date().toISOString().split('T')[0]
+    const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().split('T')[0]
 
     const { count: totalLeads } = await client
       .from('leads')
@@ -231,15 +232,32 @@ class DbService {
       .select('*', { count: 'exact', head: true })
       .eq('outreach_status', 'qualified')
 
-    const { count: outreachSent } = await client
+    // Sent today (outreach_sent_at >= today)
+    const { count: sentToday } = await client
       .from('leads')
       .select('*', { count: 'exact', head: true })
       .eq('outreach_status', 'outreach_sent')
+      .gte('outreach_sent_at', today)
 
+    // Sent this week (outreach_sent_at >= 7 days ago)
+    const { count: sentWeek } = await client
+      .from('leads')
+      .select('*', { count: 'exact', head: true })
+      .eq('outreach_status', 'outreach_sent')
+      .gte('outreach_sent_at', weekAgo)
+
+    // Replied total (all time)
     const { count: replied } = await client
       .from('leads')
       .select('*', { count: 'exact', head: true })
       .eq('outreach_status', 'replied')
+
+    // Replied this week (for response rate calculation)
+    const { count: repliedThisWeek } = await client
+      .from('leads')
+      .select('*', { count: 'exact', head: true })
+      .eq('outreach_status', 'replied')
+      .gte('outreach_sent_at', weekAgo)
 
     const statusCounts: Record<string, number> = {}
     let statusPage = 0
@@ -292,16 +310,18 @@ class DbService {
     }
     const by_city = Object.entries(ciudadCounts).map(([city, count]) => ({ city, count }))
 
-    const sentToday = outreachSent || 0
-    const responseRate = outreachSent ? Math.round(((replied || 0) / outreachSent) * 100) : 0
+    // response_rate = replies this week / sent this week
+    const responseRate = sentWeek ? Math.round(((repliedThisWeek || 0) / sentWeek) * 100) : 0
+    // conversion_rate = qualified / sent this week
+    const conversionRate = sentWeek ? Math.round(((hotLeads || 0) / sentWeek) * 100) : 0
 
     return {
-      sent_today: sentToday,
-      sent_week: sentToday,
+      sent_today: sentToday || 0,
+      sent_week: sentWeek || 0,
       pending: pending || 0,
       hot_leads: hotLeads || 0,
       response_rate: responseRate,
-      conversion_rate: responseRate,
+      conversion_rate: conversionRate,
       by_city,
       by_status,
       by_vertical

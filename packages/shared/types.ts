@@ -33,6 +33,15 @@ export interface Lead {
   actions_history: LeadAction[]
 }
 
+export interface OutreachMessage {
+  id: string
+  lead_id: string
+  direction: 'inbound' | 'outbound' | 'outbound_auto'
+  content: string
+  sent_at: string
+  message_id?: string
+}
+
 export interface RawLead {
   vertical: string
   nombre: string

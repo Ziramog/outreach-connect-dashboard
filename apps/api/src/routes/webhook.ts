@@ -1,14 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { createClient } from '@supabase/supabase-js'
+import { dbService } from '../services/db.service.js'
 
 const router = Router()
-
-function getSupabase() {
-  return createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_KEY!
-  )
-}
 
 // YCloud webhook verification
 router.get('/ycloud', (req: Request, res: Response) => {
@@ -43,10 +37,10 @@ router.post('/ycloud', async (req: Request, res: Response) => {
 
       // Find lead by phone (normalize to digits)
       const digits = from.replace(/\D/g, '')
-      const supabase = getSupabase()
+      const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!)
       const { data: leads } = await supabase
         .from('leads')
-        .select('id, nombre, telefono, outreach_status')
+        .select('id, nombre, telefono, ciudad, outreach_status')
         .or(`telefono.ilike.*${digits},whatsapp.ilike.*${digits}`)
         .limit(1)
 
@@ -67,6 +61,44 @@ router.post('/ycloud', async (req: Request, res: Response) => {
           .from('leads')
           .update({ outreach_status: 'replied' })
           .eq('id', leadId)
+
+        // Auto follow-up: queue next message if intro was already sent
+        try {
+          const { data: leadData } = await supabase
+            .from('leads')
+            .select('outreach_sent_at, outreach_status, telefono')
+            .eq('id', leadId)
+            .single()
+
+          if (leadData?.outreach_sent_at) {
+            // Lead has received intro — auto queue followup_2
+            const settings = dbService.getSettings()
+            const followupText = (settings.message_templates as any).followup_2
+              ?.replace('{name}', leads?.[0]?.nombre || 'Contacto')
+              ?.replace('{city}', leads?.[0]?.ciudad || '')
+
+            if (followupText) {
+              const phoneDigits = String(leadData.telefono).replace(/\D/g, '')
+              const fs = require('fs')
+              fs.writeFileSync('/home/hermes/data/baileys-connect/send-trigger.json', JSON.stringify({
+                phone: phoneDigits,
+                message: followupText,
+                auto: true
+              }))
+              console.log(`[Webhook] Auto follow-up queued for lead ${leadId}`)
+
+              // Log auto outbound to history
+              await supabase.from('outreach_history').insert({
+                lead_id: leadId,
+                direction: 'outbound_auto',
+                content: followupText,
+                sent_at: new Date().toISOString()
+              })
+            }
+          }
+        } catch (e: any) {
+          console.error('[Webhook] Auto follow-up error:', e.message)
+        }
       }
 
       console.log(`[Webhook] Inbound from ${from}: "${text.substring(0, 50)}" → lead ${leadId || 'unknown'}`)

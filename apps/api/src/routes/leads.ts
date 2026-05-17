@@ -49,6 +49,24 @@ leadsRouter.get('/:id', async (req: Request, res: Response) => {
   }
 })
 
+leadsRouter.get('/:id/messages', async (req: Request, res: Response) => {
+  try {
+    const supabase = (dbService as any).supabase
+    if (!supabase) return res.status(500).json({ error: 'DB not initialized' })
+
+    const { data: messages, error } = await supabase
+      .from('outreach_history')
+      .select('*')
+      .eq('lead_id', req.params.id)
+      .order('sent_at', { ascending: true })
+
+    if (error) throw error
+    res.json({ messages: messages || [] })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 leadsRouter.post('/:id/action', async (req: Request, res: Response) => {
   try {
     const { action } = req.body
@@ -64,14 +82,35 @@ leadsRouter.post('/:id/action', async (req: Request, res: Response) => {
 
     if (action === 'send_intro' || action === 'send_followup') {
       const settings = dbService.getSettings()
-      const templateKey = action === 'send_intro' ? 'intro' : 'followup_1'
-      const text = settings.message_templates[templateKey as keyof typeof settings.message_templates]
+      const templateKey = action === 'send_intro' ? 'intro' : 'followup_2'
+      const text = (settings.message_templates as any)[templateKey]
         .replace('{name}', lead.nombre)
         .replace('{city}', lead.ciudad)
+        .replace('{vertical}', lead.vertical)
+        .replace('{provincia}', lead.provincia)
+        .replace('{website}', lead.website || '')
+        .replace('{productos}', lead.productos_servicios || '')
+        .replace('{email}', lead.email || '')
 
       const phoneNormalized = String(lead.telefono).replace(/\D/g, '')
       await baileysService.sendMessage(phoneNormalized, text)
       messageSent = text
+
+      // Log outbound message to outreach_history
+      try {
+        const supabase = (dbService as any).supabase
+        if (supabase) {
+          const { error } = await supabase.from('outreach_history').insert({
+            lead_id: req.params.id,
+            direction: 'outbound',
+            content: text,
+            sent_at: new Date().toISOString()
+          })
+          if (error) console.error('[leads] outreach_history insert error:', error.message)
+        }
+      } catch (e: any) {
+        console.error('[leads] outreach_history write error:', e.message)
+      }
     }
 
     if (action === 'send_intro') {
