@@ -350,7 +350,8 @@ class DbService {
       target_provincias: [],
       message_templates: { intro: '', followup_1: '', followup_2: '' },
       cooldown_minutes: 30,
-      daily_limit: 100
+      daily_limit: 100,
+      warmup: { enabled: false, start_limit: 5, duration_days: 3 }
     }
   }
 

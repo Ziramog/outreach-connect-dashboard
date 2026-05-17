@@ -86,6 +86,11 @@ export interface Settings {
   }
   cooldown_minutes: number
   daily_limit: number
+  warmup: {
+    enabled: boolean
+    start_limit: number
+    duration_days: number
+  }
 }
 
 export interface ApiResponse<T> {

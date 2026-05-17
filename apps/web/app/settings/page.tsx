@@ -10,7 +10,8 @@ const defaultSettings: Settings = {
   target_provincias: [],
   message_templates: { intro: '', followup_1: '', followup_2: '' },
   cooldown_minutes: 30,
-  daily_limit: 100
+  daily_limit: 100,
+  warmup: { enabled: false, start_limit: 5, duration_days: 3 }
 }
 
 export default function SettingsPage() {
@@ -287,6 +288,51 @@ export default function SettingsPage() {
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2"
               />
             </div>
+          </div>
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+          <h2 className="font-medium mb-2">Warm-up anti-bloqueo</h2>
+          <p className="text-xs text-zinc-500 mb-4">Incrementa gradualmente el envío para evitar que WhatsApp te bloquee. Solo se activa si está habilitado.</p>
+          <div className="flex items-center gap-3 mb-4">
+            <button
+              onClick={() => setSettings(s => ({ ...s, warmup: { ...s.warmup, enabled: !s.warmup.enabled } }))}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                settings.warmup.enabled ? 'bg-green-500' : 'bg-zinc-700'
+              }`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                settings.warmup.enabled ? 'translate-x-6' : 'translate-x-1'
+              }`} />
+            </button>
+            <span className="text-sm text-zinc-300">{settings.warmup.enabled ? 'Activado' : 'Desactivado'}</span>
+          </div>
+          {settings.warmup.enabled && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-zinc-500 block mb-1">Mensajes inicio (por día)</label>
+                <input
+                  type="number"
+                  value={settings.warmup.start_limit}
+                  onChange={e => setSettings(s => ({ ...s, warmup: { ...s.warmup, start_limit: parseInt(e.target.value) || 1 } }))}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2"
+                  min="1"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-zinc-500 block mb-1">Días en warm-up</label>
+                <input
+                  type="number"
+                  value={settings.warmup.duration_days}
+                  onChange={e => setSettings(s => ({ ...s, warmup: { ...s.warmup, duration_days: parseInt(e.target.value) || 1 } }))}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2"
+                  min="1"
+                />
+              </div>
+            </div>
+          )}
+          <div className="mt-3 text-xs text-zinc-600">
+            Progresión: día 1 → {settings.warmup.start_limit}, día {settings.warmup.duration_days} → {settings.daily_limit} (límite normal)
           </div>
         </div>
       </div>
