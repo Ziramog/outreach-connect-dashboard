@@ -3,10 +3,12 @@ import { createClient } from '@supabase/supabase-js'
 
 const router = Router()
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!
-)
+function getSupabase() {
+  return createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_KEY!
+  )
+}
 
 // YCloud webhook verification
 router.get('/ycloud', (req: Request, res: Response) => {
@@ -41,6 +43,7 @@ router.post('/ycloud', async (req: Request, res: Response) => {
 
       // Find lead by phone (normalize to digits)
       const digits = from.replace(/\D/g, '')
+      const supabase = getSupabase()
       const { data: leads } = await supabase
         .from('leads')
         .select('id, nombre, telefono, outreach_status')

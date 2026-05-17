@@ -1,3 +1,11 @@
+// Polyfill WebSocket for Node.js < 22 (required for Supabase realtime)
+const getWebSocket = () => { try { return require('ws') } catch { return undefined } }
+const ws = getWebSocket()
+const globalAny: any = global
+if (ws && !globalAny.WebSocket) {
+  globalAny.WebSocket = ws.WebSocket || ws
+}
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { config } from '../config.js'
 import { v4 as uuidv4 } from 'uuid'
@@ -130,7 +138,6 @@ class DbService {
     const now = new Date().toISOString()
 
     for (const lead of leads) {
-      // Check if exists
       const { data: existing } = await this.getClient()
         .from('leads')
         .select('id')
@@ -234,36 +241,54 @@ class DbService {
       .select('*', { count: 'exact', head: true })
       .eq('outreach_status', 'replied')
 
-    const { data: byStatusData } = await client
-      .from('leads')
-      .select('outreach_status')
-
     const statusCounts: Record<string, number> = {}
-    for (const row of byStatusData || []) {
-      const s = row.outreach_status || 'pending'
-      statusCounts[s] = (statusCounts[s] || 0) + 1
+    let statusPage = 0
+    while (true) {
+      const { data } = await client
+        .from('leads')
+        .select('outreach_status')
+        .range(statusPage * 1000, (statusPage + 1) * 1000 - 1)
+      if (!data || data.length === 0) break
+      for (const row of data) {
+        const s = row.outreach_status || 'pending'
+        statusCounts[s] = (statusCounts[s] || 0) + 1
+      }
+      if (data.length < 1000) break
+      statusPage++
     }
     const by_status = Object.entries(statusCounts).map(([status, count]) => ({ status, count }))
 
-    const { data: byVerticalData } = await client
-      .from('leads')
-      .select('vertical')
-
     const verticalCounts: Record<string, number> = {}
-    for (const row of byVerticalData || []) {
-      const v = row.vertical || 'inmobiliarias'
-      verticalCounts[v] = (verticalCounts[v] || 0) + 1
+    let verticalPage = 0
+    while (true) {
+      const { data } = await client
+        .from('leads')
+        .select('vertical')
+        .range(verticalPage * 1000, (verticalPage + 1) * 1000 - 1)
+      if (!data || data.length === 0) break
+      for (const row of data) {
+        const v = row.vertical || 'inmobiliarias'
+        verticalCounts[v] = (verticalCounts[v] || 0) + 1
+      }
+      if (data.length < 1000) break
+      verticalPage++
     }
     const by_vertical = Object.entries(verticalCounts).map(([vertical, count]) => ({ vertical, count }))
 
-    const { data: byCiudadData } = await client
-      .from('leads')
-      .select('ciudad')
-
     const ciudadCounts: Record<string, number> = {}
-    for (const row of byCiudadData || []) {
-      const c = row.ciudad || 'Desconocida'
-      ciudadCounts[c] = (ciudadCounts[c] || 0) + 1
+    let ciudadPage = 0
+    while (true) {
+      const { data } = await client
+        .from('leads')
+        .select('ciudad')
+        .range(ciudadPage * 1000, (ciudadPage + 1) * 1000 - 1)
+      if (!data || data.length === 0) break
+      for (const row of data) {
+        const c = row.ciudad || 'Desconocida'
+        ciudadCounts[c] = (ciudadCounts[c] || 0) + 1
+      }
+      if (data.length < 1000) break
+      ciudadPage++
     }
     const by_city = Object.entries(ciudadCounts).map(([city, count]) => ({ city, count }))
 
@@ -296,29 +321,33 @@ class DbService {
   }
 
   async getDistinctVerticals(): Promise<{ vertical: string; count: number }[]> {
-    const { data, error } = await this.getClient()
-      .from('leads')
-      .select('vertical')
-      .not('vertical', 'is', null)
-      .not('vertical', 'eq', '')
-
-    if (error) throw error
     const counts: Record<string, number> = {}
-    for (const row of data || []) {
-      const v = row.vertical || 'inmobiliarias'
-      counts[v] = (counts[v] || 0) + 1
+    let page = 0
+    while (true) {
+      const { data, error } = await this.getClient()
+        .from('leads')
+        .select('vertical')
+        .range(page * 1000, (page + 1) * 1000 - 1)
+      if (error) throw error
+      if (!data || data.length === 0) break
+      for (const row of data || []) {
+        const v = row.vertical || 'inmobiliarias'
+        if (v) counts[v] = (counts[v] || 0) + 1
+      }
+      if (data.length < 1000) break
+      page++
     }
     return Object.entries(counts)
       .map(([vertical, count]) => ({ vertical, count }))
       .sort((a, b) => b.count - a.count)
   }
 
-  // Settings are still kept in SQLite for simplicity
-  // (not critical for the lead machine)
   getSettings() {
     return {
       business_hours: { start: '08:00', end: '17:00', timezone: 'America/Argentina/Cordoba', days: [1, 2, 3, 4, 5] },
       cities: [],
+      target_verticals: [],
+      target_provincias: [],
       message_templates: { intro: '', followup_1: '', followup_2: '' },
       cooldown_minutes: 30,
       daily_limit: 100

@@ -77,6 +77,8 @@ export interface Settings {
     days: number[]
   }
   cities: string[]
+  target_verticals: string[]
+  target_provincias: string[]
   message_templates: {
     intro: string
     followup_1: string

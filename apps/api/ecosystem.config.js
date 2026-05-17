@@ -23,11 +23,19 @@ module.exports = {
       name: 'outreach-daemon',
       script: '/home/hermes/workspace/projects/outreach-connect-daemon/daemon.js',
       args: 'start',
+      cwd: '/home/hermes/workspace/projects/outreach-connect-daemon',
+      node_args: '--no-warnings',
       exec_mode: 'fork',
       instances: 1,
-      autorestart: false,
+      autorestart: true,
       watch: false,
-      cron_restart: '0 8 * * 1-5'
+      max_memory_restart: '500M',
+      env: {
+        NODE_ENV: 'production',
+        TZ: 'America/Argentina/Cordoba',
+        HTTP_PROXY: 'http://022dd721a029802f73a4:221e4f35e3534717@gw.dataimpulse.com:823',
+        HTTPS_PROXY: 'http://022dd721a029802f73a4:221e4f35e3534717@gw.dataimpulse.com:823'
+      }
     }
   ]
 }

@@ -80,10 +80,10 @@ class BaileysService {
 
   async sendMessage(phone: string, text: string): Promise<string> {
     const fs = require('fs')
-    const queueFile = '/home/hermes/data/baileys-connect/send-queue.json'
+    const triggerFile = '/home/hermes/data/baileys-connect/send-trigger.json'
     const payload = { phone, text, queued_at: new Date().toISOString() }
-    fs.writeFileSync(queueFile, JSON.stringify(payload))
-    console.log('[Baileys] Message queued via send-queue.json')
+    fs.writeFileSync(triggerFile, JSON.stringify(payload))
+    console.log('[Baileys] Message queued via send-trigger.json')
     return 'queued'
   }
 }

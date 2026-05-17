@@ -46,3 +46,16 @@ qrRouter.post('/regenerate', async (_req: Request, res: Response) => {
     res.status(500).json({ error: err.message })
   }
 })
+
+qrRouter.post('/send', async (req: Request, res: Response) => {
+  try {
+    const { phone, text } = req.body
+    if (!phone || !text) {
+      return res.status(400).json({ error: 'phone and text are required' })
+    }
+    await baileysService.sendMessage(phone, text)
+    res.json({ ok: true, queued: true })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})

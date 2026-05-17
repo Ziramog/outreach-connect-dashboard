@@ -6,6 +6,8 @@ import type { Settings } from '@/lib/types'
 const defaultSettings: Settings = {
   business_hours: { start: '08:00', end: '17:00', timezone: 'America/Argentina/Cordoba', days: [1, 2, 3, 4, 5] },
   cities: [],
+  target_verticals: [],
+  target_provincias: [],
   message_templates: { intro: '', followup_1: '', followup_2: '' },
   cooldown_minutes: 30,
   daily_limit: 100
@@ -16,12 +18,19 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [cityInput, setCityInput] = useState('')
+  const [verticals, setVerticals] = useState<{ vertical: string; count: number }[]>([])
+  const [provincias, setProvincias] = useState<string[]>([])
 
   useEffect(() => {
-    fetch('/api/proxy/settings')
-      .then(r => r.json())
-      .then(data => { if (Object.keys(data).length) setSettings(data) })
-      .catch(() => {})
+    Promise.all([
+      fetch('/api/proxy/settings').then(r => r.json()),
+      fetch('/api/proxy/leads/verticals').then(r => r.json()),
+      fetch('/api/proxy/leads/cities').then(r => r.json())
+    ]).then(([settingsData, verticalData, cityData]) => {
+      if (Object.keys(settingsData).length) setSettings(settingsData)
+      setVerticals(verticalData.verticals || [])
+      setProvincias(cityData.cities || [])
+    }).catch(() => {})
   }, [])
 
   const handleSave = async () => {
@@ -48,6 +57,37 @@ export default function SettingsPage() {
 
   const removeCity = (city: string) => {
     setSettings(s => ({ ...s, cities: s.cities.filter(c => c !== city) }))
+  }
+
+  const toggleVertical = (vertical: string) => {
+    setSettings(s => ({
+      ...s,
+      target_verticals: s.target_verticals.includes(vertical)
+        ? s.target_verticals.filter(v => v !== vertical)
+        : [...s.target_verticals, vertical]
+    }))
+  }
+
+  const toggleProvincia = (provincia: string) => {
+    setSettings(s => ({
+      ...s,
+      target_provincias: s.target_provincias.includes(provincia)
+        ? s.target_provincias.filter(p => p !== provincia)
+        : [...s.target_provincias, provincia]
+    }))
+  }
+
+  const getProvinciaFromCity = (city: string): string => {
+    const provinciaMap: Record<string, string> = {
+      'Córdoba': 'Córdoba', 'Villa María': 'Córdoba', ' Río Cuarto': 'Córdoba',
+      'Rosario': 'Santa Fe', 'Santa Fe capital': 'Santa Fe',
+      'Mendoza': 'Mendoza', 'Godoy Cruz': 'Mendoza', 'Guaymallén': 'Mendoza',
+      'San Miguel de Tucumán': 'Tucumán', 'Tucumán': 'Tucumán',
+      'La Plata': 'Buenos Aires', 'Quilmes': 'Buenos Aires', 'Lomas de Zamora': 'Buenos Aires',
+      'Mar del Plata': 'Buenos Aires', 'Bahía Blanca': 'Buenos Aires',
+      'Salta': 'Salta', 'Jujuy': 'Jujuy',
+    }
+    return provinciaMap[city] || 'Otros'
   }
 
   const toggleDay = (day: number) => {
@@ -145,6 +185,46 @@ export default function SettingsPage() {
                 {city}
                 <button onClick={() => removeCity(city)} className="text-zinc-500 hover:text-zinc-300">×</button>
               </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+          <h2 className="font-medium mb-2">Verticales objetivo</h2>
+          <p className="text-xs text-zinc-500 mb-4">Seleccioná las verticales que se incluirán en el envío automático.</p>
+          <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+            {verticals.map(v => (
+              <button
+                key={v.vertical}
+                onClick={() => toggleVertical(v.vertical)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  settings.target_verticals.includes(v.vertical)
+                    ? 'bg-green-500/20 text-green-400 border border-green-500/50'
+                    : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                }`}
+              >
+                {v.vertical} ({v.count})
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+          <h2 className="font-medium mb-2">Provincias objetivo</h2>
+          <p className="text-xs text-zinc-500 mb-4">Seleccioná las provincias que se incluirán en el envío automático.</p>
+          <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+            {[...new Set(provincias.map(c => getProvinciaFromCity(c)))].sort().map(provincia => (
+              <button
+                key={provincia}
+                onClick={() => toggleProvincia(provincia)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  settings.target_provincias.includes(provincia)
+                    ? 'bg-green-500/20 text-green-400 border border-green-500/50'
+                    : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                }`}
+              >
+                {provincia}
+              </button>
             ))}
           </div>
         </div>
