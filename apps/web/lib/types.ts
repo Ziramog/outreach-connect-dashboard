@@ -1,6 +1,6 @@
-import type { Lead, DaemonStatus, Stats, Settings, QRStatus } from '../../../packages/shared/types'
+import type { Lead, DaemonStatus, Stats, Settings, QRStatus, OutreachMessage } from '../../../packages/shared/types'
 
-export type { Lead, DaemonStatus, Stats, Settings, QRStatus }
+export type { Lead, DaemonStatus, Stats, Settings, QRStatus, OutreachMessage }
 
 export interface ApiResponse<T> {
   data?: T
