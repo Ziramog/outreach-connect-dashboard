@@ -11,8 +11,8 @@
 |---|---|---|---|
 | Frontend | Next.js 14 (App Router) | Vercel (`outreach-connect-dashboard.vercel.app`) | Active |
 | API Gateway | Express 4 + TypeScript | VPS :3000 (PM2 `wolfim-api`) | Active |
-| WhatsApp | Baileys `@whiskeysockets/baileys` v2.3000 | VPS standalone daemon (`node daemon.js`) | Connected |
-| Outreach Daemon | Custom JS autonomous loop | VPS standalone (PID 2114924) | Running |
+| WhatsApp | Baileys `@whiskeysockets/baileys` v2.3000 | VPS PM2 `outreach-daemon` | Connected |
+| Outreach Daemon | Custom JS autonomous loop | VPS PM2 (`outreach-daemon`, PID 2131265) | Running |
 | Lead Database | Supabase PostgreSQL | Cloud (`mrrieeeilameejhvbccu.supabase.co`) | Active |
 | Session Storage | Baileys multi-file auth | VPS `/home/hermes/data/baileys-connect/` | Active |
 
@@ -37,8 +37,8 @@ Data directories:
 ├── /data/auth-session/                  ← older session backup (device 2)
 └── /home/hermes/data/                   ← leads CSV exports, old SQLite dbs
 
-Daemon (standalone, NOT PM2-managed):
-└── PID 2114924: node /home/hermes/workspace/projects/outreach-connect-daemon/daemon.js
+Daemon (PM2-managed):
+└── outreach-daemon (PM2, PID 2131265): node /home/hermes/workspace/projects/outreach-connect-daemon/daemon.js
 ```
 
 ---
@@ -99,6 +99,7 @@ VPS (not in any repo)
 │   ├── creds.json           ← WhatsApp auth credentials
 │   ├── qr.txt               ← current QR PNG image
 │   ├── status.json          ← connection state
+│   ├── warmup.json          ← warm-up config (written by Settings API)
 │   └── device-list-*.json   ← device pairing data
 └── /data/auth-session/      ← older session backup
 ```
@@ -144,16 +145,19 @@ VPS (not in any repo)
 
 ## 5. Anti-Ban Strategy (Active)
 
-| Protection | Value | Log |
-|---|---|---|
-| Daily limit | 20 messages/day | `[Cap] DAILY LIMIT REACHED` |
-| Variable delay | 15-45s random between messages | `[Delay] 23.4s` |
-| Ramp-up (fresh start) | 5 msgs/day | `[RampUp] Fresh start — 5 msgs/day` |
-| Ramp-up (>72h offline) | 5 msgs/day | `[RampUp] Offline>72h — 5/day` |
-| Ramp-up (24-72h offline) | 10 msgs/day | `[RampUp] Offline>24h — 10/day` |
-| Normal | 20 msgs/day | `[RampUp] Normal — 20/day` |
-| Business hours | 8 AM - 5 PM Argentina (UTC-3) | `[Business Hours] Outside schedule` |
-| Weekends | No sending | `[Business Hours] ... Weekend` |
+| Protection | Value | Source | Log |
+|---|---|---|---|
+| **Warm-up schedule** | Configurable via Settings (`warmup.json`) | Settings API → `warmup.json` | `[WarmUp] 3/7d - limit: 12/day` |
+| Daily limit (default) | 20 messages/day | Fallback from offline ramp-up | `[Cap] DAILY LIMIT REACHED` |
+| Variable delay | 15-45s random between messages | daemon.js | `[Delay] 23.4s` |
+| Ramp-up (fresh start) | 5 msgs/day | Automatic (when warmup disabled) | `[RampUp] Fresh start — 5 msgs/day` |
+| Ramp-up (>72h offline) | 5 msgs/day | Automatic | `[RampUp] Offline>72h — 5/day` |
+| Ramp-up (24-72h offline) | 10 msgs/day | Automatic | `[RampUp] Offline>24h — 10/day` |
+| Normal | 20 msgs/day | Automatic | `[RampUp] Normal — 20/day` |
+| Business hours | 8 AM - 5 PM Argentina (UTC-3) | daemon.js | `[Business Hours] Outside schedule` |
+| Weekends | No sending | daemon.js | `[Business Hours] ... Weekend` |
+
+**Warm-up system:** When `warmup.enabled: true` in Settings, the daemon reads `warmup.json` and uses linear interpolation from `start_limit` → `daily_limit` over `duration_days`. Example: 5 msgs/day for 3 days, then ramp to 20/day. Resets counter at midnight. File: `/home/hermes/data/baileys-connect/warmup.json`.
 
 ---
 
@@ -264,21 +268,16 @@ API_SECRET=30038fa230438403eeb24caa3c2670d1f62eeb36fcc80f82f7da4eca6b2c9d45
 
 ```bash
 # === VPS ===
-pm2 status                        # Check PM2 processes
+pm2 status                        # Check PM2 processes (wolfim-api + outreach-daemon)
 pm2 restart wolfim-api            # Restart API
+pm2 restart outreach-daemon       # Restart daemon
 pm2 logs wolfim-api --lines 50   # View API logs
-pm2 logs wolfim-api --err --lines 50  # View errors
-
-# Daemon (standalone — not PM2)
-ps aux | grep daemon.js           # Check if running
-kill <PID>                         # Stop daemon
-cd /home/hermes/workspace/projects/outreach-connect-daemon && nohup node daemon.js start > /tmp/daemon.log 2>&1 &
+pm2 logs outreach-daemon --lines 50  # View daemon logs
 
 # === Testing ===
-curl http://localhost:3000/health
-curl -H "x-api-secret: 30038fa230438403eeb24caa3c2670d1f62eeb36fcc80f82f7da4eca6b2c9d45" http://localhost:3000/api/qr/status
-curl -H "x-api-secret: 30038fa230438403eeb24caa3c2670d1f62eeb36fcc80f82f7da4eca6b2c9d45" http://localhost:3000/api/stats
-curl -H "x-api-secret: 30038fa230438403eeb24caa3c2670d1f62eeb36fcc80f82f7da4eca6b2c9d45" "http://localhost:3000/api/leads?vertical=inmobiliarias&limit=5"
+curl https://api.wolfim.com/health
+curl -H "x-api-secret: 30038fa230438403eeb24caa3c2670d1f62eeb36fcc80f82f7da4eca6b2c9d45" https://api.wolfim.com/api/qr/status
+curl -H "x-api-secret: 30038fa230438403eeb24caa3c2670d1f62eeb36fcc80f82f7da4eca6b2c9d45" https://api.wolfim.com/api/stats
 ```
 
 ---
@@ -289,6 +288,8 @@ curl -H "x-api-secret: 30038fa230438403eeb24caa3c2670d1f62eeb36fcc80f82f7da4eca6
 - **Daemon PM2-managed** — `outreach-daemon` now runs via PM2 with `autorestart: true`, survives reboots
 - **Send mechanism fixed** — `sendMessage()` writes to `send-trigger.json`, `POST /api/qr/send` endpoint added
 - **HTTPS from Vercel** — `NEXT_PUBLIC_VPS_API_URL=https://api.wolfim.com`, Let's Encrypt cert active, `ALLOWED_ORIGIN` locked
+- **Warm-up system** — configurable warm-up in Settings (enabled, start_limit, duration_days), writes to `warmup.json` for daemon to read
+- **Target filters** — Settings page has target_verticals and target_provincias dropdowns to filter which leads to include in outreach
 
 ### High Priority
 
@@ -302,6 +303,20 @@ curl -H "x-api-secret: 30038fa230438403eeb24caa3c2670d1f62eeb36fcc80f82f7da4eca6
 - No uptime monitoring (e.g., PM2 + Cronitor, Better Stack)
 - WhatsApp disconnect during the night = no outreach until manually noticed
 - No Slack/email alerts on session drop
+
+### Low Priority / Future
+
+**4. Typing simulation**
+Simulate typing before sending (~30ms per character) to mimic human behavior. From `baileys-antiban`.
+
+**5. Message content variator**
+Avoid identical message detection by slightly varying message text (swap synonyms, shuffle order).
+
+**6. Session health monitoring**
+Detect Bad MAC errors and decrypt failure ratios before bans happen. From `baileys-antiban`.
+
+**7. ReplyRatioGuard**
+Don't send to contacts with <10% reply rate. From `baileys-antiban`.
 
 ---
 
