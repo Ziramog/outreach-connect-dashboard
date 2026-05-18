@@ -1,7 +1,7 @@
 # Outreach Connect — Architecture Document
 
 > WhatsApp Outreach System · Baileys + Express + Next.js · VPS Contabo 194.163.161.99
-> Updated: 2026-05-17
+> Updated: 2026-05-18
 
 ---
 
@@ -12,9 +12,9 @@
 | Frontend | Next.js 14 (App Router) | Vercel (`outreach-connect-dashboard.vercel.app`) | Active |
 | API Gateway | Express 4 + TypeScript | VPS :3000 (PM2 `wolfim-api`) | Active |
 | WhatsApp | Baileys `@whiskeysockets/baileys` v2.3000 | VPS PM2 `outreach-daemon` | Connected |
-| Outreach Daemon | Custom JS autonomous loop | VPS PM2 (`outreach-daemon`, PID 2131265) | Running |
+| Outreach Daemon | Custom JS autonomous loop | VPS PM2 (`outreach-daemon`, PID 2137820) | Running |
 | Lead Database | Supabase PostgreSQL | Cloud (`mrrieeeilameejhvbccu.supabase.co`) | Active |
-| Session Storage | Baileys multi-file auth | VPS `/home/hermes/data/baileys-connect/` | Active |
+| Session Storage | Baileys multi-file auth | VPS `/home/hermes/data/baileys-connect/` | Active (persistent — no re-scan needed) |
 
 **Repositories:**
 - Dashboard/API: `https://github.com/Ziramog/outreach-connect-dashboard` (monorepo at `F:\baileysconnect\`)
@@ -38,7 +38,7 @@ Data directories:
 └── /home/hermes/data/                   ← leads CSV exports, old SQLite dbs
 
 Daemon (PM2-managed):
-└── outreach-daemon (PM2, PID 2131265): node /home/hermes/workspace/projects/outreach-connect-daemon/daemon.js
+└── outreach-daemon (PM2, PID 2137820): node /home/hermes/workspace/projects/outreach-connect-daemon/daemon.js
 ```
 
 ---
@@ -120,7 +120,7 @@ VPS (not in any repo)
         ┌───────────▼───────────┐              ┌──────────────────────────────┐
         │  Daemon (PM2)        │              │   VPS filesystem              │
         │  outreach-daemon     │              │   /home/hermes/data/          │
-        │  PID: 2118672       │ ←───────────  │   baileys-connect/             │
+        │  PID: 2137820       │ ←───────────  │   baileys-connect/             │
         └─────────────────────┘  file IPC     └──────────────────────────────┘
                     ↑
                     │  direct
@@ -290,6 +290,9 @@ curl -H "x-api-secret: 30038fa230438403eeb24caa3c2670d1f62eeb36fcc80f82f7da4eca6
 - **HTTPS from Vercel** — `NEXT_PUBLIC_VPS_API_URL=https://api.wolfim.com`, Let's Encrypt cert active, `ALLOWED_ORIGIN` locked
 - **Warm-up system** — configurable warm-up in Settings (enabled, start_limit, duration_days), writes to `warmup.json` for daemon to read
 - **Target filters** — Settings page has target_verticals and target_provincias dropdowns to filter which leads to include in outreach
+- **Persistent WhatsApp session** — `useMultiFileAuthState` stores credentials at `/home/hermes/data/baileys-connect/`, auto-reconnects on daemon restart without re-scanning QR
+- **Stats fixed** — `sent_today`/`sent_week` now use date filters on `outreach_sent_at`, `response_rate` and `conversion_rate` use separate formulas
+- **outreach_history schema aligned** — API code now uses actual Supabase columns: `status` (not `direction`), `changed_at` (not `sent_at`), `ycloud_message_id` (not `message_id`). No `content` column — activity shown as timeline in UI
 
 ### High Priority
 
