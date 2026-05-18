@@ -47,12 +47,12 @@ router.post('/ycloud', async (req: Request, res: Response) => {
       const leadId = leads?.[0]?.id || null
 
       // Save inbound message to outreach_history
+      // Actual columns: lead_id, status (not direction), changed_at (not sent_at), ycloud_message_id
       await supabase.from('outreach_history').insert({
         lead_id: leadId,
-        direction: 'inbound',
-        message_id: msgId,
-        content: text,
-        sent_at: timestamp
+        status: 'inbound',
+        changed_at: timestamp,
+        ycloud_message_id: msgId
       })
 
       // Update lead status to 'replied' if matched
@@ -87,12 +87,11 @@ router.post('/ycloud', async (req: Request, res: Response) => {
               }))
               console.log(`[Webhook] Auto follow-up queued for lead ${leadId}`)
 
-              // Log auto outbound to history
+              // Log auto outbound to history (actual schema: status, changed_at, ycloud_message_id)
               await supabase.from('outreach_history').insert({
                 lead_id: leadId,
-                direction: 'outbound_auto',
-                content: followupText,
-                sent_at: new Date().toISOString()
+                status: 'outbound_auto',
+                changed_at: new Date().toISOString()
               })
             }
           }

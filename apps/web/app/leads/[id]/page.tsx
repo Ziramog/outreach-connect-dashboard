@@ -116,22 +116,20 @@ export default function LeadDetailPage() {
 
       {messages.length > 0 && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-6">
-          <h3 className="font-medium mb-4">Mensajes</h3>
-          <div className="space-y-3">
+          <h3 className="font-medium mb-4">Actividad de mensajes</h3>
+          <div className="space-y-2">
             {messages.map((msg, i) => (
-              <div key={i} className={`flex flex-col ${msg.direction === 'inbound' ? 'items-start' : 'items-end'}`}>
-                <div className={`max-w-[80%] rounded-xl px-4 py-2 text-sm ${
-                  msg.direction === 'inbound'
-                    ? 'bg-zinc-800 text-zinc-200 rounded-bl-none'
-                    : msg.direction === 'outbound_auto'
-                    ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-br-none'
-                    : 'bg-green-500/20 text-green-400 border border-green-500/30 rounded-br-none'
-                }`}>
-                  {msg.content}
+              <div key={i} className={`flex items-center gap-3 ${msg.direction === 'inbound' ? 'flex-row' : 'flex-row-reverse'}`}>
+                <div className={`w-2 h-2 rounded-full ${
+                  msg.direction === 'inbound' ? 'bg-blue-400' :
+                  msg.direction === 'outbound_auto' ? 'bg-yellow-400' : 'bg-green-400'
+                }`} />
+                <div className="text-xs text-zinc-500">
+                  {msg.direction === 'inbound' ? 'Recibido' : msg.direction === 'outbound_auto' ? 'Auto' : 'Enviado'}
                 </div>
-                <span className="text-xs text-zinc-600 mt-1">
-                  {msg.direction === 'inbound' ? 'Recibido' : msg.direction === 'outbound_auto' ? 'Auto' : 'Enviado'} · {new Date(msg.sent_at).toLocaleString('es-AR')}
-                </span>
+                <div className="text-xs text-zinc-600">
+                  {new Date(msg.sent_at).toLocaleString('es-AR')}
+                </div>
               </div>
             ))}
           </div>

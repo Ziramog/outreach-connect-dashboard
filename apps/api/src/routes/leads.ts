@@ -54,14 +54,24 @@ leadsRouter.get('/:id/messages', async (req: Request, res: Response) => {
     const supabase = (dbService as any).supabase
     if (!supabase) return res.status(500).json({ error: 'DB not initialized' })
 
+    // Actual columns: lead_id, status, changed_at, ycloud_message_id (no content/direction/sent_at)
     const { data: messages, error } = await supabase
       .from('outreach_history')
-      .select('*')
+      .select('id, lead_id, status, changed_at, ycloud_message_id')
       .eq('lead_id', req.params.id)
-      .order('sent_at', { ascending: true })
+      .order('changed_at', { ascending: true })
 
     if (error) throw error
-    res.json({ messages: messages || [] })
+    // Map to OutreachMessage shape for frontend compatibility
+    const mapped = (messages || []).map((m: any) => ({
+      id: m.id,
+      lead_id: m.lead_id,
+      direction: m.status, // status holds 'inbound', 'outbound', 'outbound_auto'
+      sent_at: m.changed_at,
+      message_id: m.ycloud_message_id || undefined,
+      content: '' // actual message content not stored in this table
+    }))
+    res.json({ messages: mapped })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
   }
@@ -100,11 +110,11 @@ leadsRouter.post('/:id/action', async (req: Request, res: Response) => {
       try {
         const supabase = (dbService as any).supabase
         if (supabase) {
+          // Actual outreach_history columns: lead_id, status, changed_at, ycloud_message_id
           const { error } = await supabase.from('outreach_history').insert({
             lead_id: req.params.id,
-            direction: 'outbound',
-            content: text,
-            sent_at: new Date().toISOString()
+            status: 'outbound',
+            changed_at: new Date().toISOString()
           })
           if (error) console.error('[leads] outreach_history insert error:', error.message)
         }

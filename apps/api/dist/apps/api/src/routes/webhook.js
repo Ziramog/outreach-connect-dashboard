@@ -3,8 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.webhookRouter = void 0;
 const express_1 = require("express");
 const supabase_js_1 = require("@supabase/supabase-js");
+const db_service_js_1 = require("../services/db.service.js");
 const router = (0, express_1.Router)();
-const supabase = (0, supabase_js_1.createClient)(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 // YCloud webhook verification
 router.get('/ycloud', (req, res) => {
     const mode = req.query['hub.mode'];
@@ -34,19 +34,20 @@ router.post('/ycloud', async (req, res) => {
                 continue;
             // Find lead by phone (normalize to digits)
             const digits = from.replace(/\D/g, '');
+            const supabase = (0, supabase_js_1.createClient)(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
             const { data: leads } = await supabase
                 .from('leads')
-                .select('id, nombre, telefono, outreach_status')
+                .select('id, nombre, telefono, ciudad, outreach_status')
                 .or(`telefono.ilike.*${digits},whatsapp.ilike.*${digits}`)
                 .limit(1);
             const leadId = leads?.[0]?.id || null;
             // Save inbound message to outreach_history
+            // Actual columns: lead_id, status (not direction), changed_at (not sent_at), ycloud_message_id
             await supabase.from('outreach_history').insert({
                 lead_id: leadId,
-                direction: 'inbound',
-                message_id: msgId,
-                content: text,
-                sent_at: timestamp
+                status: 'inbound',
+                changed_at: timestamp,
+                ycloud_message_id: msgId
             });
             // Update lead status to 'replied' if matched
             if (leadId) {
@@ -54,6 +55,40 @@ router.post('/ycloud', async (req, res) => {
                     .from('leads')
                     .update({ outreach_status: 'replied' })
                     .eq('id', leadId);
+                // Auto follow-up: queue next message if intro was already sent
+                try {
+                    const { data: leadData } = await supabase
+                        .from('leads')
+                        .select('outreach_sent_at, outreach_status, telefono')
+                        .eq('id', leadId)
+                        .single();
+                    if (leadData?.outreach_sent_at) {
+                        // Lead has received intro — auto queue followup_2
+                        const settings = db_service_js_1.dbService.getSettings();
+                        const followupText = settings.message_templates.followup_2
+                            ?.replace('{name}', leads?.[0]?.nombre || 'Contacto')
+                            ?.replace('{city}', leads?.[0]?.ciudad || '');
+                        if (followupText) {
+                            const phoneDigits = String(leadData.telefono).replace(/\D/g, '');
+                            const fs = require('fs');
+                            fs.writeFileSync('/home/hermes/data/baileys-connect/send-trigger.json', JSON.stringify({
+                                phone: phoneDigits,
+                                message: followupText,
+                                auto: true
+                            }));
+                            console.log(`[Webhook] Auto follow-up queued for lead ${leadId}`);
+                            // Log auto outbound to history (actual schema: status, changed_at, ycloud_message_id)
+                            await supabase.from('outreach_history').insert({
+                                lead_id: leadId,
+                                status: 'outbound_auto',
+                                changed_at: new Date().toISOString()
+                            });
+                        }
+                    }
+                }
+                catch (e) {
+                    console.error('[Webhook] Auto follow-up error:', e.message);
+                }
             }
             console.log(`[Webhook] Inbound from ${from}: "${text.substring(0, 50)}" → lead ${leadId || 'unknown'}`);
         }

@@ -1,6 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.dbService = void 0;
+// Polyfill WebSocket for Node.js < 22 (required for Supabase realtime)
+const getWebSocket = () => { try {
+    return require('ws');
+}
+catch {
+    return undefined;
+} };
+const ws = getWebSocket();
+const globalAny = global;
+if (ws && !globalAny.WebSocket) {
+    globalAny.WebSocket = ws.WebSocket || ws;
+}
 const supabase_js_1 = require("@supabase/supabase-js");
 const config_js_1 = require("../config.js");
 const uuid_1 = require("uuid");
@@ -119,7 +131,6 @@ class DbService {
         let skipped = 0;
         const now = new Date().toISOString();
         for (const lead of leads) {
-            // Check if exists
             const { data: existing } = await this.getClient()
                 .from('leads')
                 .select('id')
@@ -191,6 +202,7 @@ class DbService {
     async getStats() {
         const client = this.getClient();
         const today = new Date().toISOString().split('T')[0];
+        const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().split('T')[0];
         const { count: totalLeads } = await client
             .from('leads')
             .select('*', { count: 'exact', head: true });
@@ -202,54 +214,145 @@ class DbService {
             .from('leads')
             .select('*', { count: 'exact', head: true })
             .eq('outreach_status', 'qualified');
-        const { count: outreachSent } = await client
+        // Sent today (outreach_sent_at >= today)
+        const { count: sentToday } = await client
             .from('leads')
             .select('*', { count: 'exact', head: true })
-            .eq('outreach_status', 'outreach_sent');
+            .eq('outreach_status', 'outreach_sent')
+            .gte('outreach_sent_at', today);
+        // Sent this week (outreach_sent_at >= 7 days ago)
+        const { count: sentWeek } = await client
+            .from('leads')
+            .select('*', { count: 'exact', head: true })
+            .eq('outreach_status', 'outreach_sent')
+            .gte('outreach_sent_at', weekAgo);
+        // Replied total (all time)
         const { count: replied } = await client
             .from('leads')
             .select('*', { count: 'exact', head: true })
             .eq('outreach_status', 'replied');
-        const { data: byStatusData } = await client
+        // Replied this week (for response rate calculation)
+        const { count: repliedThisWeek } = await client
             .from('leads')
-            .select('outreach_status');
+            .select('*', { count: 'exact', head: true })
+            .eq('outreach_status', 'replied')
+            .gte('outreach_sent_at', weekAgo);
         const statusCounts = {};
-        for (const row of byStatusData || []) {
-            const s = row.outreach_status || 'pending';
-            statusCounts[s] = (statusCounts[s] || 0) + 1;
+        let statusPage = 0;
+        while (true) {
+            const { data } = await client
+                .from('leads')
+                .select('outreach_status')
+                .range(statusPage * 1000, (statusPage + 1) * 1000 - 1);
+            if (!data || data.length === 0)
+                break;
+            for (const row of data) {
+                const s = row.outreach_status || 'pending';
+                statusCounts[s] = (statusCounts[s] || 0) + 1;
+            }
+            if (data.length < 1000)
+                break;
+            statusPage++;
         }
         const by_status = Object.entries(statusCounts).map(([status, count]) => ({ status, count }));
-        const { data: byVerticalData } = await client
-            .from('leads')
-            .select('vertical');
         const verticalCounts = {};
-        for (const row of byVerticalData || []) {
-            const v = row.vertical || 'inmobiliarias';
-            verticalCounts[v] = (verticalCounts[v] || 0) + 1;
+        let verticalPage = 0;
+        while (true) {
+            const { data } = await client
+                .from('leads')
+                .select('vertical')
+                .range(verticalPage * 1000, (verticalPage + 1) * 1000 - 1);
+            if (!data || data.length === 0)
+                break;
+            for (const row of data) {
+                const v = row.vertical || 'inmobiliarias';
+                verticalCounts[v] = (verticalCounts[v] || 0) + 1;
+            }
+            if (data.length < 1000)
+                break;
+            verticalPage++;
         }
-        const by_city = Object.entries(verticalCounts).map(([city, count]) => ({ city, count }));
-        const sentToday = outreachSent || 0;
-        const responseRate = outreachSent ? Math.round(((replied || 0) / outreachSent) * 100) : 0;
+        const by_vertical = Object.entries(verticalCounts).map(([vertical, count]) => ({ vertical, count }));
+        const ciudadCounts = {};
+        let ciudadPage = 0;
+        while (true) {
+            const { data } = await client
+                .from('leads')
+                .select('ciudad')
+                .range(ciudadPage * 1000, (ciudadPage + 1) * 1000 - 1);
+            if (!data || data.length === 0)
+                break;
+            for (const row of data) {
+                const c = row.ciudad || 'Desconocida';
+                ciudadCounts[c] = (ciudadCounts[c] || 0) + 1;
+            }
+            if (data.length < 1000)
+                break;
+            ciudadPage++;
+        }
+        const by_city = Object.entries(ciudadCounts).map(([city, count]) => ({ city, count }));
+        // response_rate = replies this week / sent this week
+        const responseRate = sentWeek ? Math.round(((repliedThisWeek || 0) / sentWeek) * 100) : 0;
+        // conversion_rate = qualified / sent this week
+        const conversionRate = sentWeek ? Math.round(((hotLeads || 0) / sentWeek) * 100) : 0;
         return {
-            sent_today: sentToday,
-            sent_week: sentToday,
+            sent_today: sentToday || 0,
+            sent_week: sentWeek || 0,
             pending: pending || 0,
             hot_leads: hotLeads || 0,
             response_rate: responseRate,
-            conversion_rate: responseRate,
+            conversion_rate: conversionRate,
             by_city,
-            by_status
+            by_status,
+            by_vertical
         };
     }
-    // Settings are still kept in SQLite for simplicity
-    // (not critical for the lead machine)
+    async getDistinctCities() {
+        const { data, error } = await this.getClient()
+            .from('leads')
+            .select('ciudad')
+            .not('ciudad', 'is', null)
+            .not('ciudad', 'eq', '');
+        if (error)
+            throw error;
+        const cities = [...new Set((data || []).map((r) => r.ciudad).filter(Boolean))].sort();
+        return cities;
+    }
+    async getDistinctVerticals() {
+        const counts = {};
+        let page = 0;
+        while (true) {
+            const { data, error } = await this.getClient()
+                .from('leads')
+                .select('vertical')
+                .range(page * 1000, (page + 1) * 1000 - 1);
+            if (error)
+                throw error;
+            if (!data || data.length === 0)
+                break;
+            for (const row of data || []) {
+                const v = row.vertical || 'inmobiliarias';
+                if (v)
+                    counts[v] = (counts[v] || 0) + 1;
+            }
+            if (data.length < 1000)
+                break;
+            page++;
+        }
+        return Object.entries(counts)
+            .map(([vertical, count]) => ({ vertical, count }))
+            .sort((a, b) => b.count - a.count);
+    }
     getSettings() {
         return {
             business_hours: { start: '08:00', end: '17:00', timezone: 'America/Argentina/Cordoba', days: [1, 2, 3, 4, 5] },
             cities: [],
+            target_verticals: [],
+            target_provincias: [],
             message_templates: { intro: '', followup_1: '', followup_2: '' },
             cooldown_minutes: 30,
-            daily_limit: 100
+            daily_limit: 100,
+            warmup: { enabled: false, start_limit: 5, duration_days: 3 }
         };
     }
     updateSettings(partial) {

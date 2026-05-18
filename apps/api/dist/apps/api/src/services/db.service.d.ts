@@ -23,6 +23,11 @@ declare class DbService {
     updateLeadStatus(id: string, status: string): Promise<Lead>;
     updateLead(id: string, updates: Partial<Lead>): Promise<Lead>;
     getStats(): Promise<Stats>;
+    getDistinctCities(): Promise<string[]>;
+    getDistinctVerticals(): Promise<{
+        vertical: string;
+        count: number;
+    }[]>;
     getSettings(): {
         business_hours: {
             start: string;
@@ -31,6 +36,8 @@ declare class DbService {
             days: number[];
         };
         cities: never[];
+        target_verticals: never[];
+        target_provincias: never[];
         message_templates: {
             intro: string;
             followup_1: string;
@@ -38,6 +45,11 @@ declare class DbService {
         };
         cooldown_minutes: number;
         daily_limit: number;
+        warmup: {
+            enabled: boolean;
+            start_limit: number;
+            duration_days: number;
+        };
     };
     updateSettings(partial: any): any;
 }
