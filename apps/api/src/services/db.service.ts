@@ -9,7 +9,10 @@ if (ws && !globalAny.WebSocket) {
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { config } from '../config.js'
 import { v4 as uuidv4 } from 'uuid'
+import { writeFileSync, readFileSync, existsSync } from 'fs'
 import type { Lead, RawLead, Stats } from '../../../../packages/shared/types'
+
+const SETTINGS_FILE = '/home/hermes/data/baileys-connect/settings.json'
 
 // Mapping from Supabase column names to Lead interface
 function mapRow(row: any): Lead {
@@ -362,7 +365,13 @@ class DbService {
       .sort((a, b) => b.count - a.count)
   }
 
-  getSettings() {
+  getSettings(): any {
+    try {
+      if (existsSync(SETTINGS_FILE)) {
+        const raw = readFileSync(SETTINGS_FILE, 'utf8')
+        return JSON.parse(raw)
+      }
+    } catch {}
     return {
       business_hours: { start: '08:00', end: '17:00', timezone: 'America/Argentina/Cordoba', days: [1, 2, 3, 4, 5] },
       cities: [],
@@ -375,8 +384,16 @@ class DbService {
     }
   }
 
-  updateSettings(partial: any) {
-    return partial
+  updateSettings(partial: any): any {
+    try {
+      const current = this.getSettings()
+      const updated = { ...current, ...partial }
+      writeFileSync(SETTINGS_FILE, JSON.stringify(updated, null, 2))
+      return updated
+    } catch (err: any) {
+      console.error('[DbService] updateSettings error:', err.message)
+      return partial
+    }
   }
 }
 
